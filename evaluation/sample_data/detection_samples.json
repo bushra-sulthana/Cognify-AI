@@ -1,0 +1,21 @@
+{
+  "description": "Small hand-written sample set in a TruthfulQA/FEVER-style format for measuring DETECTION performance. label SUPPORTED = the claim is backed by the knowledge base; NOT_SUPPORTED = the claim is false or absent from the knowledge base (the system should flag it).",
+  "samples": [
+    {"claim": "Paris is the capital of France.", "label": "SUPPORTED", "style": "FEVER"},
+    {"claim": "Canberra is the capital city of Australia.", "label": "SUPPORTED", "style": "FEVER"},
+    {"claim": "Sydney is the capital of Australia.", "label": "NOT_SUPPORTED", "style": "FEVER"},
+    {"claim": "At standard atmospheric pressure water boils at 100 degrees Celsius.", "label": "SUPPORTED", "style": "TruthfulQA"},
+    {"claim": "Water boils at 70 degrees Celsius at sea level.", "label": "NOT_SUPPORTED", "style": "TruthfulQA"},
+    {"claim": "The Great Wall of China is not visible to the unaided eye from space.", "label": "SUPPORTED", "style": "TruthfulQA"},
+    {"claim": "The Great Wall of China is the only man-made object visible from the Moon.", "label": "NOT_SUPPORTED", "style": "TruthfulQA"},
+    {"claim": "Python was first released in 1991.", "label": "SUPPORTED", "style": "HaluEval"},
+    {"claim": "Python was created by Dennis Ritchie in 1984.", "label": "NOT_SUPPORTED", "style": "HaluEval"},
+    {"claim": "The Transformer architecture was introduced in the paper Attention Is All You Need in 2017.", "label": "SUPPORTED", "style": "HaluEval"},
+    {"claim": "The first Moon landing took place on 20 July 1969 during Apollo 11.", "label": "SUPPORTED", "style": "FEVER"},
+    {"claim": "The first Moon landing took place in 1972 during the Apollo 13 mission.", "label": "NOT_SUPPORTED", "style": "FEVER"},
+    {"claim": "The adult human body normally contains 206 bones.", "label": "SUPPORTED", "style": "TruthfulQA"},
+    {"claim": "The adult human body contains 315 bones.", "label": "NOT_SUPPORTED", "style": "TruthfulQA"},
+    {"claim": "The population of Hyderabad was exactly 11.2 million people in 2024.", "label": "NOT_SUPPORTED", "style": "HaluEval"},
+    {"claim": "Ollama runs open-weight language models locally and exposes an HTTP server on port 11434.", "label": "SUPPORTED", "style": "HaluEval"}
+  ]
+}

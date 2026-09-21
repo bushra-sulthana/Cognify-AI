@@ -1,0 +1,27 @@
+# Environment
+.env
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Generated data: vector index, cached embeddings, logs
+data/vector_index/
+data/*.log
+data/*.npy
+
+# Hugging Face model cache (if HF_HOME is set inside the project)
+.cache/
+models/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+.venv/

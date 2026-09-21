@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cognify-AI</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap masthead-inner">
+    <div>
+      <h1>Cognify-AI</h1>
+      <p class="tagline">Self-correcting LLM framework for reliable AI</p>
+    </div>
+    <div class="service" id="service">
+      <span class="dot" id="serviceDot"></span>
+      <span id="serviceText">Checking local services…</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ------------------------------------------------ ask ---------- -->
+  <section class="ask">
+    <label for="query" class="ask-label">Ask a question. The answer is generated locally, then checked against your knowledge base.</label>
+    <textarea id="query" rows="3" placeholder="Ask Cognify-AI anything..."></textarea>
+
+    <div class="ask-row">
+      <button id="runBtn" class="primary">Generate &amp; verify</button>
+      <label class="iterations">
+        Correction rounds allowed
+        <select id="maxIterations">
+          <option value="">Use server default</option>
+          <option value="0">0 — verify only</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select>
+      </label>
+      <span id="progress" class="progress" hidden></span>
+    </div>
+
+    <div class="samples">
+      <span>Try:</span>
+      <button class="chip" type="button">What is the capital of France?</button>
+      <button class="chip" type="button">What is the capital of Australia?</button>
+      <button class="chip" type="button">Can the Great Wall of China be seen from space?</button>
+      <button class="chip" type="button">At what temperature does water boil at sea level?</button>
+      <button class="chip" type="button">Who won the Under-19 cricket league in Hyderabad in 2019?</button>
+    </div>
+  </section>
+
+  <div id="alert" class="alert" hidden></div>
+
+  <!-- --------------------------------------------- results --------- -->
+  <section id="results" hidden>
+
+    <div class="grid">
+
+      <!-- verdict / meter -->
+      <article class="panel meter-panel">
+        <div class="verdict">
+          <span id="riskBadge" class="badge">LOW RISK</span>
+          <span id="verificationStatus" class="verification">VERIFIED</span>
+        </div>
+
+        <div class="meter">
+          <div class="meter-track">
+            <div class="meter-zone zone-low"></div>
+            <div class="meter-zone zone-medium"></div>
+            <div class="meter-zone zone-high"></div>
+            <div class="meter-marker" id="meterMarker"><span id="meterValue">0</span></div>
+          </div>
+          <div class="meter-scale"><span>0</span><span>30</span><span>60</span><span>100</span></div>
+          <p class="meter-caption">Hallucination Risk Score — an indicator produced by this framework, not a calibrated probability.</p>
+        </div>
+
+        <dl class="figures">
+          <div><dt>Confidence</dt><dd id="confidenceValue">—</dd></div>
+          <div><dt>Risk</dt><dd id="riskValue">—</dd></div>
+          <div><dt>Correction rounds</dt><dd id="iterationsValue">—</dd></div>
+          <div><dt>Claims checked</dt><dd id="claimsValue">—</dd></div>
+        </dl>
+      </article>
+
+      <!-- risk breakdown -->
+      <article class="panel">
+        <h2>How the score was built</h2>
+        <ul class="bars" id="breakdown"></ul>
+        <p class="note" id="formulaNote"></p>
+      </article>
+
+      <!-- answers -->
+      <article class="panel span-2">
+        <h2>Answer</h2>
+        <div class="answers">
+          <div class="answer-block">
+            <h3>First generation</h3>
+            <p id="originalAnswer" class="answer-text"></p>
+          </div>
+          <div class="answer-block final" id="finalBlock">
+            <h3>After verification</h3>
+            <p id="finalAnswer" class="answer-text"></p>
+          </div>
+        </div>
+      </article>
+
+      <!-- claims -->
+      <article class="panel span-2">
+        <h2>Claim-by-claim verification</h2>
+        <div id="claimList" class="claim-list"></div>
+      </article>
+
+      <!-- history -->
+      <article class="panel span-2" id="historyPanel">
+        <h2>Correction trace</h2>
+        <ol class="trace" id="history"></ol>
+      </article>
+
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>
+      Cognify-AI reduces hallucination risk by verifying generated claims against a local
+      knowledge base and rewriting unsupported answers. It does not eliminate hallucinations:
+      the retriever, the entailment model and the local LLM can all be wrong, and a claim that is
+      missing from the knowledge base is reported as unverified, not as false.
+    </p>
+    <p class="api-hint">Runs fully offline — Ollama + Sentence-Transformers + FAISS + FastAPI. No API keys. API docs at <code>/docs</code>.</p>
+  </footer>
+</main>
+
+<script src="script.js"></script>
+</body>
+</html>

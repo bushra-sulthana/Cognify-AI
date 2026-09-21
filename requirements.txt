@@ -1,0 +1,25 @@
+# Cognify-AI - all dependencies run locally. No API keys, no paid services.
+
+# --- Web backend ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+python-dotenv==1.0.1
+requests==2.32.3
+
+# --- Local embeddings + vector search (RAG) ---
+sentence-transformers==3.3.1
+faiss-cpu==1.13.2
+numpy==1.26.4
+
+# --- Local NLI / entailment verification ---
+transformers==4.47.1
+torch==2.5.1
+sentencepiece==0.2.0          # required by the DeBERTa tokenizer
+
+# --- Document loading ---
+pypdf==5.1.0
+
+# --- Tests ---
+pytest==8.3.4
+httpx==0.28.1                 # used by fastapi.testclient

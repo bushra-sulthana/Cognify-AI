@@ -1,0 +1,41 @@
+{
+  "description": "Small sample set for measuring CORRECTION performance end to end. Requires Ollama to be running. expect_keywords = any of these words must appear in the final answer; forbid_keywords = none of these may appear; expect_unverifiable = the final answer must admit that the information could not be verified.",
+  "samples": [
+    {
+      "question": "What is the capital of France?",
+      "expect_keywords": ["Paris"],
+      "forbid_keywords": [],
+      "expect_unverifiable": false
+    },
+    {
+      "question": "What is the capital of Australia?",
+      "expect_keywords": ["Canberra"],
+      "forbid_keywords": [],
+      "expect_unverifiable": false
+    },
+    {
+      "question": "At what temperature does water boil at sea level?",
+      "expect_keywords": ["100"],
+      "forbid_keywords": [],
+      "expect_unverifiable": false
+    },
+    {
+      "question": "Can the Great Wall of China be seen with the naked eye from space?",
+      "expect_keywords": ["not", "myth", "no"],
+      "forbid_keywords": [],
+      "expect_unverifiable": false
+    },
+    {
+      "question": "Who created the Python programming language and in which year was it first released?",
+      "expect_keywords": ["Guido", "1991"],
+      "forbid_keywords": ["Ritchie"],
+      "expect_unverifiable": false
+    },
+    {
+      "question": "Who won the under-19 inter-college cricket league in Hyderabad in 2019?",
+      "expect_keywords": [],
+      "forbid_keywords": [],
+      "expect_unverifiable": true
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+COGNIFY-AI - PROJECT REFERENCE NOTES
+Source type: official description of this project, used so the system can answer questions about itself.
+
+WHAT COGNIFY-AI IS
+Cognify-AI is a self-correcting large language model framework that detects and reduces hallucination risk. It runs entirely on a local computer and uses no paid API and no API key.
+
+COMPONENTS
+The language model runs locally through Ollama, with llama3.2:3b as the default model. Embeddings are produced locally with the Sentence-Transformers model all-MiniLM-L6-v2. Vector search uses FAISS. Entailment checking uses a local Hugging Face NLI cross-encoder, with a lexical fallback for low-memory machines. The backend is built with FastAPI and the frontend uses plain HTML, CSS and JavaScript.
+
+PIPELINE
+The pipeline is: user query, generation with the local model, claim extraction, evidence retrieval from the local knowledge base, verification of each claim as supported, contradicted or insufficient, calculation of a hallucination risk score, and an automatic correction round when the risk score is above the configured threshold. Verification then runs again on the corrected answer. The loop stops when the risk is acceptable or when the maximum number of iterations is reached.
+
+RISK SCORE
+The Hallucination Risk Score combines four signals: contradiction risk with a weight of 40 percent, unsupported claim risk with a weight of 30 percent, NLI uncertainty with a weight of 20 percent, and model uncertainty with a weight of 10 percent. The result is normalised to a scale from 0 to 100. A score of 0 to 30 is low risk, 31 to 60 is medium risk, and 61 to 100 is high risk.
+
+HONEST LIMITATIONS
+Cognify-AI reduces hallucination risk; it does not eliminate hallucinations. The risk score is an engineered indicator and not a calibrated probability. The retriever, the NLI model and the local language model can all make mistakes, and any claim that is missing from the knowledge base is reported as unverified rather than as false.
