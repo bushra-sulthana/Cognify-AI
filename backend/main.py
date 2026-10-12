@@ -197,8 +197,16 @@ def index():
     index_file = FRONTEND_DIR / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
-    return JSONResponse({"message": "Cognify-AI API is running. Open /docs for the API."})
+    return JSONResponse(
+        {"message": "Cognify-AI API is running. Open /docs for the API."}
+    )
 
 
 if FRONTEND_DIR.exists():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
+
+    app.mount(
+        "/frontend",
+        StaticFiles(directory=str(FRONTEND_DIR)),
+        name="frontend",
+    )
+

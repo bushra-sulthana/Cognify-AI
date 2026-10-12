@@ -1,226 +1,488 @@
-/* Cognify-AI frontend logic.
-   Talks to the FastAPI backend. When the page is served by the backend the API
-   base is empty (same origin); when index.html is opened directly from disk we
-   fall back to http://localhost:8000. */
 
-const API_BASE = location.protocol === "file:" ? "http://localhost:8000" : "";
+(() => {
+  const $ = id => document.getElementById(id);
 
-const $ = (id) => document.getElementById(id);
+  const state = {
+    chats: [],
+    activeChatId: null,
+    history: [],
+    busy: false
+  };
 
-const els = {
-  query: $("query"),
-  runBtn: $("runBtn"),
-  maxIterations: $("maxIterations"),
-  progress: $("progress"),
-  alert: $("alert"),
-  results: $("results"),
-  riskBadge: $("riskBadge"),
-  verificationStatus: $("verificationStatus"),
-  meterMarker: $("meterMarker"),
-  meterValue: $("meterValue"),
-  confidenceValue: $("confidenceValue"),
-  riskValue: $("riskValue"),
-  iterationsValue: $("iterationsValue"),
-  claimsValue: $("claimsValue"),
-  breakdown: $("breakdown"),
-  formulaNote: $("formulaNote"),
-  originalAnswer: $("originalAnswer"),
-  finalAnswer: $("finalAnswer"),
-  claimList: $("claimList"),
-  history: $("history"),
-  historyPanel: $("historyPanel"),
-  serviceDot: $("serviceDot"),
-  serviceText: $("serviceText"),
-};
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[c]);
 
-/* ------------------------------------------------------------ helpers */
-function showAlert(message, kind = "error") {
-  els.alert.textContent = message;
-  els.alert.className = kind === "info" ? "alert info" : "alert";
-  els.alert.hidden = false;
-}
-function clearAlert() {
-  els.alert.hidden = true;
-}
-function titleCase(text) {
-  return String(text || "").replace(/_/g, " ").toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
+  const pretty = value => {
+    if (value === undefined || value === null || value === "") return "Not reported";
+    return typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
+  };
 
-/* ------------------------------------------------------ health check */
-async function checkHealth() {
-  try {
-    const response = await fetch(`${API_BASE}/api/health`);
-    const data = await response.json();
-    const kb = `${data.knowledge_base_documents} docs / ${data.knowledge_base_chunks} chunks`;
-    if (data.ollama_running && data.model_available) {
-      els.serviceDot.className = "dot ok";
-      els.serviceText.textContent = `${data.ollama_model} ready · ${kb}`;
-    } else {
-      els.serviceDot.className = "dot warn";
-      els.serviceText.textContent = data.message;
-      showAlert(data.message, "info");
+  function activeChat() {
+    return state.chats.find(c => c.id === state.activeChatId) || null;
+  }
+
+  function newChat() {
+    const chat = {
+      id: String(Date.now()),
+      title: "New conversation",
+      messages: [],
+      report: null
+    };
+
+    state.chats.unshift(chat);
+    state.activeChatId = chat.id;
+    renderRecent();
+    renderMessages();
+    renderReport(null);
+    showView("chat");
+    $("messageInput").focus();
+  }
+
+  function renderRecent(filter = "") {
+    const chats = state.chats.filter(c =>
+      c.title.toLowerCase().includes(filter.toLowerCase())
+    );
+
+    $("recentChats").innerHTML = chats.length
+      ? chats.map(c => `
+          <button class="recent-chat ${c.id === state.activeChatId ? "selected" : ""}" data-chat-id="${esc(c.id)}">
+            ◌ &nbsp; ${esc(c.title)}
+          </button>
+        `).join("")
+      : `<div class="empty-state">${filter ? "No matching conversations." : "Your conversations will appear here."}</div>`;
+  }
+
+  function renderMessages() {
+    const chat = activeChat();
+
+    $("welcome").style.display =
+      chat && chat.messages.length ? "none" : "block";
+
+    $("messages").innerHTML = chat ? chat.messages.map((m, i) => {
+      if (m.role === "loading") {
+        return `<div class="message"><div class="message-avatar">✳</div><div class="message-content"><div class="message-label">COGNIFY-AI</div><div class="thinking">Verifying response...</div></div></div>`;
+      }
+
+      const user = m.role === "user";
+
+      return `
+        <article class="message ${user ? "user" : "assistant"}">
+          <div class="message-avatar">${user ? "Y" : "✳"}</div>
+          <div class="message-content">
+            <div class="message-label">${user ? "YOU" : "COGNIFY-AI"}</div>
+            <div class="message-bubble">${esc(m.content)}</div>
+            ${!user ? `<div class="message-tools"><button data-copy="${i}">Copy answer</button><button data-again="${i}">Ask again</button></div>` : ""}
+          </div>
+        </article>
+      `;
+    }).join("") : "";
+
+    $("chatScroll").scrollTop = $("chatScroll").scrollHeight;
+  }
+
+  function showView(name) {
+    const ids = {
+      chat: "chatView",
+      knowledge: "knowledgeView",
+      history: "historyView",
+      settings: "settingsView"
+    };
+
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    $(ids[name] || ids.chat).classList.add("active");
+
+    document.querySelectorAll(".nav-item").forEach(b =>
+      b.classList.toggle("active", b.dataset.view === name)
+    );
+
+    $("pageTitle").textContent = ({
+      chat: "Chat",
+      knowledge: "Knowledge base",
+      history: "Verification history",
+      settings: "Settings"
+    })[name] || "Chat";
+
+    $("sidebar").classList.remove("mobile-open");
+
+    if (name === "knowledge" || name === "settings") refreshHealth();
+    if (name === "history") renderHistory();
+  }
+
+  function get(obj, keys) {
+    if (!obj || typeof obj !== "object") return undefined;
+    for (const key of keys) {
+      if (obj[key] !== undefined && obj[key] !== null) return obj[key];
     }
-    if (data.knowledge_base_chunks === 0) {
-      showAlert("The knowledge base is empty. Add .txt, .md or .pdf files to knowledge_base/ and restart the server.", "info");
+    return undefined;
+  }
+
+  function arrayify(value) {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object") {
+      return Object.entries(value).map(([key, val]) =>
+        typeof val === "object" && val ? {label: key, ...val} : {label: key, value: val}
+      );
     }
-  } catch (error) {
-    els.serviceDot.className = "dot bad";
-    els.serviceText.textContent = "Backend unreachable";
-    showAlert("Cannot reach the Cognify-AI backend. Start it with:  uvicorn backend.main:app --reload --port 8000");
-  }
-}
-
-/* ---------------------------------------------------------- rendering */
-function renderMeter(data) {
-  const risk = data.risk_score;
-  els.meterMarker.style.left = `${Math.min(100, Math.max(0, risk))}%`;
-  els.meterValue.textContent = risk;
-
-  let label = "LOW RISK", cls = "badge";
-  if (data.status === "MEDIUM_RISK") { label = "MEDIUM RISK"; cls = "badge medium"; }
-  if (data.status === "HIGH_RISK")   { label = "HIGH RISK";   cls = "badge high"; }
-  els.riskBadge.textContent = label;
-  els.riskBadge.className = cls;
-
-  els.verificationStatus.textContent = `Verification: ${titleCase(data.verification_status)}`;
-  els.confidenceValue.textContent = `${data.confidence_score}%`;
-  els.riskValue.textContent = `${risk}%`;
-  els.iterationsValue.textContent = data.iterations ?? 0;
-  els.claimsValue.textContent = (data.claims || []).length;
-}
-
-function renderBreakdown(breakdown) {
-  const rows = [
-    ["Contradicted by evidence", breakdown.contradiction_risk, "40%"],
-    ["Unsupported by evidence", breakdown.unsupported_risk, "30%"],
-    ["Verifier uncertainty", breakdown.nli_uncertainty, "20%"],
-    ["Model hedging", breakdown.model_uncertainty, "10%"],
-  ];
-  els.breakdown.innerHTML = rows.map(([label, value, weight]) => `
-    <li>
-      <div class="bar-head"><span>${label}</span><span>${Math.round(value * 100)}% · weight ${weight}</span></div>
-      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(value * 100)}%"></div></div>
-    </li>`).join("");
-
-  const contributions = breakdown.weighted_contribution || {};
-  const parts = Object.entries(contributions)
-    .map(([key, value]) => `${titleCase(key)} ${value}`)
-    .join(" + ");
-  els.formulaNote.textContent = `Points added to the score: ${parts}.`;
-}
-
-function renderClaims(evidence) {
-  if (!evidence || evidence.length === 0) {
-    els.claimList.innerHTML = `<p class="empty">No separate factual claims were extracted from this answer.</p>`;
-    return;
-  }
-  els.claimList.innerHTML = evidence.map((item) => {
-    const cls = item.status.toLowerCase();
-    const evidenceText = item.best_evidence
-      ? `<q>${item.best_evidence}</q><div class="claim-meta">Source: ${item.best_evidence_source} · retrieval similarity ${item.retrieval_score}</div>`
-      : `<span class="empty">No sufficiently relevant passage was found in the knowledge base.</span>`;
-    return `
-      <div class="claim ${cls}">
-        <div class="claim-top">
-          <span class="claim-text">${item.claim}</span>
-          <span class="status ${cls}">${item.status}</span>
-        </div>
-        <div class="claim-evidence">${evidenceText}</div>
-        <div class="claim-meta">
-          Verifier: ${item.verifier} · entailment ${item.entailment_score} ·
-          contradiction ${item.contradiction_score} · neutral ${item.neutral_score}
-        </div>
-      </div>`;
-  }).join("");
-}
-
-function renderHistory(history) {
-  if (!history || history.length <= 1) {
-    els.historyPanel.hidden = true;
-    return;
-  }
-  els.historyPanel.hidden = false;
-  els.history.innerHTML = history.map((step) => `
-    <li>
-      <strong>${step.iteration === 0 ? "Initial answer" : `Correction ${step.iteration}`}</strong> —
-      risk ${step.risk_score}, confidence ${step.confidence_score},
-      ${step.supported} supported / ${step.contradicted} contradicted / ${step.insufficient} unsupported
-      <div class="trace-answer">${step.answer}</div>
-    </li>`).join("");
-}
-
-function renderResult(data) {
-  renderMeter(data);
-  renderBreakdown(data.risk_breakdown);
-  els.originalAnswer.textContent = data.original_answer;
-  els.finalAnswer.textContent = data.final_answer;
-  renderClaims(data.evidence);
-  renderHistory(data.history);
-  els.results.hidden = false;
-
-  if (data.warnings && data.warnings.length) {
-    showAlert(data.warnings.join(" "), "info");
-  } else {
-    clearAlert();
-  }
-}
-
-/* ------------------------------------------------------------- submit */
-async function run() {
-  const query = els.query.value.trim();
-  if (!query) {
-    showAlert("Type a question first.");
-    els.query.focus();
-    return;
+    return typeof value === "string" && value ? [value] : [];
   }
 
-  clearAlert();
-  els.runBtn.disabled = true;
-  els.progress.hidden = false;
+  function reportFrom(data) {
+    const nested = get(data, ["verification", "verification_report", "report", "analysis", "metadata"]) || {};
 
-  const started = Date.now();
-  const timer = setInterval(() => {
-    const seconds = Math.round((Date.now() - started) / 1000);
-    els.progress.textContent = `Generating, verifying and correcting locally… ${seconds}s`;
-  }, 500);
-  els.progress.textContent = "Generating, verifying and correcting locally… 0s";
+    let answer = get(data, [
+      "answer", "verified_answer", "response", "output",
+      "final_answer", "corrected_answer", "message"
+    ]);
 
-  const body = { query };
-  if (els.maxIterations.value !== "") body.max_iterations = Number(els.maxIterations.value);
+    if (answer && typeof answer === "object") {
+      answer = get(answer, ["text", "content", "answer", "output"]);
+    }
 
-  try {
-    const response = await fetch(`${API_BASE}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      const detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
-      showAlert(detail || `Request failed with status ${response.status}.`);
+    if (typeof answer !== "string") answer = "";
+
+    return {
+      answer,
+      original: get(data, ["original_answer", "initial_answer", "draft_answer"]) ??
+                get(nested, ["original_answer", "initial_answer"]),
+      risk: get(data, ["risk_score", "risk", "hallucination_risk"]) ??
+            get(nested, ["risk_score", "risk"]),
+      confidence: get(data, ["confidence", "confidence_score"]) ??
+                  get(nested, ["confidence", "confidence_score"]),
+      iterations: get(data, ["iterations", "correction_iterations", "rounds"]) ??
+                  get(nested, ["iterations", "rounds"]),
+      claims: arrayify(get(data, ["claims", "claim_analysis", "claim_results"]) ??
+                       get(nested, ["claims", "claim_analysis"])),
+      evidence: arrayify(get(data, ["evidence", "retrieved_evidence", "sources", "context"]) ??
+                         get(nested, ["evidence", "sources"])),
+      history: get(data, ["correction_history", "corrections", "history"]) ??
+               get(nested, ["correction_history", "corrections"]),
+      status: get(data, ["verification_status", "verdict", "status"]) ??
+              get(nested, ["verification_status", "verdict"]),
+      raw: data
+    };
+  }
+
+  function percent(value) {
+    if (typeof value === "string") value = Number(value.replace("%", ""));
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    if (value >= 0 && value <= 1) value *= 100;
+    return Math.round(Math.max(0, Math.min(100, value)));
+  }
+
+  function renderReport(r) {
+    const host = $("reportBody");
+
+    if (!r) {
+      host.innerHTML = `
+        <div class="report-empty">
+          <div class="report-empty-icon">◈</div>
+          <strong>Nothing to verify yet</strong>
+          <p>Ask a question to see verification results and evidence here.</p>
+        </div>`;
       return;
     }
-    renderResult(data);
-  } catch (error) {
-    showAlert("Cannot reach the backend. Make sure it is running:  uvicorn backend.main:app --reload --port 8000");
-  } finally {
-    clearInterval(timer);
-    els.progress.hidden = true;
-    els.runBtn.disabled = false;
+
+    const risk = percent(r.risk);
+    const confidence = percent(r.confidence);
+    const claims = arrayify(r.claims);
+    const evidence = arrayify(r.evidence);
+
+    const counts = {supported: 0, contradicted: 0, unclear: 0};
+
+    claims.forEach(c => {
+      const verdict = typeof c === "string" ? c :
+        String(get(c, ["verdict", "status", "label", "result", "classification"]) || "");
+
+      if (/support|entailed|correct|verified|true/i.test(verdict)) counts.supported++;
+      else if (/contradict|refuted|false|incorrect/i.test(verdict)) counts.contradicted++;
+      else counts.unclear++;
+    });
+
+    const riskSection = risk === null
+      ? `<div class="score-row"><div class="score-info"><strong>Risk score not reported</strong><small>Your backend did not include a risk score.</small></div></div>`
+      : `<div class="score-row"><div class="score-ring" style="--score:${risk}%"><strong>${risk}%</strong></div><div class="score-info"><strong>${risk < 30 ? "Lower reported risk" : risk < 65 ? "Moderate reported risk" : "Higher reported risk"}</strong><small>Score reported by your verification backend.</small></div></div>`;
+
+    const claimHtml = claims.length ? claims.map(c => {
+      const claim = typeof c === "string" ? c :
+        get(c, ["claim", "text", "statement", "content"]) || JSON.stringify(c);
+      const verdict = typeof c === "string" ? "Not classified" :
+        get(c, ["verdict", "status", "label", "result", "classification"]) || "Not classified";
+      const reason = typeof c === "string" ? "" :
+        get(c, ["reason", "explanation", "details", "justification"]) || "";
+
+      return `<div class="detail-row"><span>${esc(claim)}${reason ? "<br>" + esc(reason) : ""}</span><strong>${esc(verdict)}</strong></div>`;
+    }).join("") : "Claim-level results were not included.";
+
+    const evidenceHtml = evidence.length ? evidence.map(e => {
+      if (typeof e === "string") return `<div class="detail-row"><span>${esc(e)}</span></div>`;
+
+      const title = get(e, ["title", "source", "name", "document", "filename"]) || "Retrieved passage";
+      const content = get(e, ["text", "content", "snippet", "page_content", "excerpt"]) || JSON.stringify(e);
+
+      return `<div class="detail-row"><span><strong>${esc(title)}</strong><br>${esc(content)}</span></div>`;
+    }).join("") : "No retrieved evidence was included in this response.";
+
+    const disclosure = (title, value) => `
+      <details class="report-disclosure">
+        <summary>${title}</summary>
+        <div>${esc(pretty(value))}</div>
+      </details>`;
+
+    host.innerHTML = `
+      <section class="report-section">
+        <div class="report-section-head">
+          <strong>Overall assessment</strong>
+          <span>${esc(r.status || "Results received")}</span>
+        </div>
+        ${riskSection}
+        ${confidence === null ? "" : `<div class="report-section-content">Confidence reported by backend: <strong>${confidence}%</strong></div>`}
+      </section>
+
+      <div class="mini-metrics">
+        <div class="mini-metric"><strong>${claims.length ? counts.supported : "—"}</strong><small>Supported</small></div>
+        <div class="mini-metric"><strong>${claims.length ? counts.contradicted : "—"}</strong><small>Contradicted</small></div>
+        <div class="mini-metric"><strong>${claims.length ? counts.unclear : "—"}</strong><small>Unclear</small></div>
+      </div>
+
+      <section class="report-section">
+        <div class="report-section-head"><strong>Claim analysis</strong><span>${claims.length} items</span></div>
+        <div class="report-section-content">${claimHtml}</div>
+      </section>
+
+      <section class="report-section">
+        <div class="report-section-head"><strong>Retrieved evidence</strong><span>${evidence.length} items</span></div>
+        <div class="report-section-content">${evidenceHtml}</div>
+      </section>
+
+      ${disclosure("Original answer", r.original)}
+      ${disclosure("Correction history", r.history)}
+      ${disclosure("Raw verification response", r.raw)}
+
+      <div class="report-section-content">Correction iterations: ${esc(r.iterations ?? "Not reported")}</div>`;
   }
-}
 
-/* --------------------------------------------------------- listeners */
-els.runBtn.addEventListener("click", run);
-els.query.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) run();
-});
-document.querySelectorAll(".chip").forEach((chip) => {
-  chip.addEventListener("click", () => {
-    els.query.value = chip.textContent.trim();
-    els.query.focus();
+  async function sendMessage(text) {
+    const question = String(text || "").trim();
+    if (!question || state.busy) return;
+
+    if (!activeChat()) newChat();
+
+    const chat = activeChat();
+
+    if (!chat.messages.length) {
+      chat.title = question.length > 38 ? question.slice(0, 38) + "…" : question;
+    }
+
+    chat.messages.push(
+      {role: "user", content: question},
+      {role: "loading", content: ""}
+    );
+
+    state.busy = true;
+    $("sendBtn").disabled = true;
+    $("messageInput").value = "";
+    $("messageInput").style.height = "auto";
+    renderRecent();
+    renderMessages();
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({query: question})
+      });
+
+      const textResponse = await response.text();
+      let data;
+
+      try { data = JSON.parse(textResponse); }
+      catch { data = textResponse; }
+
+      if (!response.ok) {
+        const detail = typeof data === "object" ?
+          (data.detail || data.error || data.message) : data;
+        throw new Error(detail || `Request failed (${response.status})`);
+      }
+
+      const report = reportFrom(data);
+
+      if (!report.answer) {
+        report.answer = typeof data === "string" ? data :
+          get(data, ["detail", "text", "content"]) ||
+          "The backend response did not contain a recognized answer field. Inspect the raw response in the verification report.";
+      }
+
+      chat.messages = chat.messages.filter(m => m.role !== "loading");
+      chat.messages.push({role: "assistant", content: report.answer});
+      chat.report = report;
+
+      renderReport(report);
+
+      state.history.unshift({
+        question,
+        answer: report.answer,
+        report,
+        time: new Date()
+      });
+
+      renderHistory();
+    } catch (error) {
+      chat.messages = chat.messages.filter(m => m.role !== "loading");
+      chat.messages.push({
+        role: "assistant",
+        content: "I couldn't complete this request.\n\n" +
+          error.message +
+          "\n\nCheck that the FastAPI backend is running, then try again."
+      });
+      renderReport(null);
+    } finally {
+      state.busy = false;
+      $("sendBtn").disabled = false;
+      renderMessages();
+      renderRecent();
+    }
+  }
+
+  async function refreshHealth() {
+    try {
+      const response = await fetch("/api/health", {cache: "no-store"});
+      if (!response.ok) throw new Error("Health endpoint returned " + response.status);
+
+      const h = await response.json();
+
+      $("sidebarOrb").className = "status-orb online";
+      $("sidebarStatus").textContent = "Backend connected";
+      $("sidebarModel").textContent = h.model || h.ollama_model || "Local model available";
+
+      $("kbDocs").textContent = h.knowledge_base_documents ?? "—";
+      $("kbChunks").textContent = h.knowledge_base_chunks ?? "—";
+      $("kbEmbedding").textContent = h.embedding_backend ?? "—";
+
+      const details = [
+        ["API status", h.status],
+        ["Ollama running", h.ollama_running],
+        ["Model available", h.model_available],
+        ["Model", h.model || h.ollama_model],
+        ["Knowledge-base documents", h.knowledge_base_documents],
+        ["Knowledge-base chunks", h.knowledge_base_chunks],
+        ["Embedding backend", h.embedding_backend],
+        ["NLI backend", h.nli_backend]
+      ];
+
+      const html = details.map(([label, value]) =>
+        `<div class="detail-row"><span>${esc(label)}</span><strong>${esc(pretty(value))}</strong></div>`
+      ).join("");
+
+      $("kbDetails").innerHTML = html;
+      $("settingsDetails").innerHTML = html;
+    } catch (error) {
+      $("sidebarOrb").className = "status-orb offline";
+      $("sidebarStatus").textContent = "Backend unavailable";
+      $("sidebarModel").textContent = "Start FastAPI to connect";
+
+      const html = `<div class="detail-row"><span>Connection</span><strong>Unavailable</strong></div>`;
+      $("kbDetails").innerHTML = html;
+      $("settingsDetails").innerHTML = html;
+    }
+  }
+
+  function renderHistory() {
+    $("historyList").innerHTML = state.history.length
+      ? state.history.map((h, i) => `
+          <button class="history-item" data-history="${i}">
+            ◈ &nbsp; ${esc(h.question)}
+            <br><small>${esc(h.time.toLocaleString())}</small>
+          </button>
+        `).join("")
+      : `<div class="empty-state">No verifications yet. Ask a question in Chat to start.</div>`;
+  }
+
+  document.addEventListener("click", e => {
+    const prompt = e.target.closest("[data-prompt]");
+    if (prompt) {
+      showView("chat");
+      sendMessage(prompt.dataset.prompt);
+      return;
+    }
+
+    const nav = e.target.closest("[data-view]");
+    if (nav) {
+      showView(nav.dataset.view);
+      return;
+    }
+
+    const recent = e.target.closest("[data-chat-id]");
+    if (recent) {
+      state.activeChatId = recent.dataset.chatId;
+      renderRecent();
+      renderMessages();
+      renderReport(activeChat()?.report || null);
+      showView("chat");
+      return;
+    }
+
+    const copy = e.target.closest("[data-copy]");
+    if (copy) {
+      const msg = activeChat()?.messages[Number(copy.dataset.copy)];
+      if (msg) navigator.clipboard.writeText(msg.content);
+      return;
+    }
+
+    const again = e.target.closest("[data-again]");
+    if (again) {
+      const last = [...(activeChat()?.messages || [])].reverse().find(m => m.role === "user");
+      if (last) sendMessage(last.content);
+      return;
+    }
+
+    const history = e.target.closest("[data-history]");
+    if (history) {
+      const item = state.history[Number(history.dataset.history)];
+      if (item) {
+        renderReport(item.report);
+        showView("chat");
+      }
+    }
   });
-});
 
-checkHealth();
+  $("chatForm").addEventListener("submit", e => {
+    e.preventDefault();
+    sendMessage($("messageInput").value);
+  });
+
+  $("messageInput").addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      $("chatForm").requestSubmit();
+    }
+  });
+
+  $("messageInput").addEventListener("input", () => {
+    const el = $("messageInput");
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 140) + "px";
+  });
+
+  $("newChatBtn").addEventListener("click", newChat);
+  $("searchChats").addEventListener("input", e => renderRecent(e.target.value));
+  $("refreshHealth").addEventListener("click", refreshHealth);
+  $("settingsRefresh").addEventListener("click", refreshHealth);
+  $("toggleReport").addEventListener("click", () => $("reportPanel").classList.toggle("open"));
+  $("closeReport").addEventListener("click", () => $("reportPanel").classList.remove("open"));
+  $("mobileMenu").addEventListener("click", () => $("sidebar").classList.toggle("mobile-open"));
+
+  document.addEventListener("keydown", e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      newChat();
+    }
+    if (e.key === "Escape") {
+      $("sidebar").classList.remove("mobile-open");
+      $("reportPanel").classList.remove("open");
+    }
+  });
+
+  newChat();
+  refreshHealth();
+})();

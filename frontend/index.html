@@ -1,139 +1,175 @@
-<!DOCTYPE html>
+
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Cognify-AI</title>
-<link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090b14">
+  <title>Cognify-AI | Answers you can trust</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/frontend/style.css">
 </head>
 <body>
+<div class="app-shell">
 
-<header class="masthead">
-  <div class="wrap masthead-inner">
-    <div>
-      <h1>Cognify-AI</h1>
-      <p class="tagline">Self-correcting LLM framework for reliable AI</p>
-    </div>
-    <div class="service" id="service">
-      <span class="dot" id="serviceDot"></span>
-      <span id="serviceText">Checking local services…</span>
-    </div>
-  </div>
-</header>
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="#">
+      <span class="brand-mark">✳</span>
+      <span class="brand-name">cognify<span>-AI</span><small>TRUST LAYER FOR AI</small></span>
+    </a>
 
-<main class="wrap">
+    <button class="new-chat" id="newChatBtn">＋ New conversation</button>
 
-  <!-- ------------------------------------------------ ask ---------- -->
-  <section class="ask">
-    <label for="query" class="ask-label">Ask a question. The answer is generated locally, then checked against your knowledge base.</label>
-    <textarea id="query" rows="3" placeholder="Ask Cognify-AI anything..."></textarea>
+    <input class="search-box" id="searchChats" placeholder="Search conversations">
 
-    <div class="ask-row">
-      <button id="runBtn" class="primary">Generate &amp; verify</button>
-      <label class="iterations">
-        Correction rounds allowed
-        <select id="maxIterations">
-          <option value="">Use server default</option>
-          <option value="0">0 — verify only</option>
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-        </select>
-      </label>
-      <span id="progress" class="progress" hidden></span>
+    <div class="nav-label">WORKSPACE</div>
+    <button class="nav-item active" data-view="chat">◈ &nbsp; Chat</button>
+    <button class="nav-item" data-view="knowledge">▤ &nbsp; Knowledge base</button>
+    <button class="nav-item" data-view="history">◷ &nbsp; Verification history</button>
+
+    <div class="nav-label recent-label">RECENT CONVERSATIONS</div>
+    <div id="recentChats" class="recent-chats"></div>
+
+    <div class="sidebar-spacer"></div>
+
+    <div class="sidebar-status">
+      <span class="status-orb" id="sidebarOrb"></span>
+      <div>
+        <strong id="sidebarStatus">Connecting...</strong>
+        <small id="sidebarModel">Checking local model</small>
+      </div>
+      <button id="refreshHealth" class="icon-button">↻</button>
     </div>
 
-    <div class="samples">
-      <span>Try:</span>
-      <button class="chip" type="button">What is the capital of France?</button>
-      <button class="chip" type="button">What is the capital of Australia?</button>
-      <button class="chip" type="button">Can the Great Wall of China be seen from space?</button>
-      <button class="chip" type="button">At what temperature does water boil at sea level?</button>
-      <button class="chip" type="button">Who won the Under-19 cricket league in Hyderabad in 2019?</button>
-    </div>
-  </section>
+    <button class="profile-row" data-view="settings">
+      <span class="avatar">C</span>
+      <span><strong>Cognify workspace</strong><small>Local environment</small></span>
+    </button>
+  </aside>
 
-  <div id="alert" class="alert" hidden></div>
+  <main class="main-area">
+    <header class="topbar">
+      <button id="mobileMenu" class="icon-button mobile-only">☰</button>
+      <div class="breadcrumbs">Cognify-AI <span>/</span> <strong id="pageTitle">Chat</strong></div>
+      <button id="toggleReport" class="report-toggle">◫ Verification report</button>
+    </header>
 
-  <!-- --------------------------------------------- results --------- -->
-  <section id="results" hidden>
+    <section class="view chat-view active" id="chatView">
+      <div class="chat-scroll" id="chatScroll">
+        <div class="welcome" id="welcome">
+          <div class="eyebrow">✳ INTELLIGENCE, WITH A SECOND LOOK</div>
+          <h1>Answers you can <span>trust.</span></h1>
+          <p class="welcome-copy">Generate, verify, and improve AI responses with evidence.</p>
 
-    <div class="grid">
-
-      <!-- verdict / meter -->
-      <article class="panel meter-panel">
-        <div class="verdict">
-          <span id="riskBadge" class="badge">LOW RISK</span>
-          <span id="verificationStatus" class="verification">VERIFIED</span>
-        </div>
-
-        <div class="meter">
-          <div class="meter-track">
-            <div class="meter-zone zone-low"></div>
-            <div class="meter-zone zone-medium"></div>
-            <div class="meter-zone zone-high"></div>
-            <div class="meter-marker" id="meterMarker"><span id="meterValue">0</span></div>
+          <div class="feature-pills">
+            <span>● Self-correction</span>
+            <span>● Evidence retrieval</span>
+            <span>● Claim verification</span>
           </div>
-          <div class="meter-scale"><span>0</span><span>30</span><span>60</span><span>100</span></div>
-          <p class="meter-caption">Hallucination Risk Score — an indicator produced by this framework, not a calibrated probability.</p>
-        </div>
 
-        <dl class="figures">
-          <div><dt>Confidence</dt><dd id="confidenceValue">—</dd></div>
-          <div><dt>Risk</dt><dd id="riskValue">—</dd></div>
-          <div><dt>Correction rounds</dt><dd id="iterationsValue">—</dd></div>
-          <div><dt>Claims checked</dt><dd id="claimsValue">—</dd></div>
-        </dl>
-      </article>
+          <div class="prompt-heading">WHAT WOULD YOU LIKE TO EXPLORE?</div>
 
-      <!-- risk breakdown -->
-      <article class="panel">
-        <h2>How the score was built</h2>
-        <ul class="bars" id="breakdown"></ul>
-        <p class="note" id="formulaNote"></p>
-      </article>
+          <div class="suggestion-grid">
+            <button class="suggestion" data-prompt="Explain photosynthesis in simple terms.">
+              <span class="suggestion-icon">✧</span>
+              <span><strong>Explain a concept</strong><small>Break a complex topic into simple steps.</small></span>
+              <b>↗</b>
+            </button>
 
-      <!-- answers -->
-      <article class="panel span-2">
-        <h2>Answer</h2>
-        <div class="answers">
-          <div class="answer-block">
-            <h3>First generation</h3>
-            <p id="originalAnswer" class="answer-text"></p>
-          </div>
-          <div class="answer-block final" id="finalBlock">
-            <h3>After verification</h3>
-            <p id="finalAnswer" class="answer-text"></p>
+            <button class="suggestion" data-prompt="What is the difference between supervised and unsupervised learning?">
+              <span class="suggestion-icon blue">⌘</span>
+              <span><strong>Compare ideas</strong><small>Understand similarities and differences.</small></span>
+              <b>↗</b>
+            </button>
+
+            <button class="suggestion" data-prompt="How does a neural network learn from data?">
+              <span class="suggestion-icon pink">⌁</span>
+              <span><strong>Learn AI and ML</strong><small>Explore machine learning fundamentals.</small></span>
+              <b>↗</b>
+            </button>
+
+            <button class="suggestion" data-prompt="Give me a short study plan for an upcoming exam.">
+              <span class="suggestion-icon amber">▦</span>
+              <span><strong>Plan your learning</strong><small>Turn a goal into manageable actions.</small></span>
+              <b>↗</b>
+            </button>
           </div>
         </div>
-      </article>
 
-      <!-- claims -->
-      <article class="panel span-2">
-        <h2>Claim-by-claim verification</h2>
-        <div id="claimList" class="claim-list"></div>
-      </article>
+        <div class="messages" id="messages"></div>
+      </div>
 
-      <!-- history -->
-      <article class="panel span-2" id="historyPanel">
-        <h2>Correction trace</h2>
-        <ol class="trace" id="history"></ol>
-      </article>
+      <div class="composer-wrap">
+        <form id="chatForm" class="composer">
+          <textarea id="messageInput" rows="1" placeholder="Ask Cognify anything..."></textarea>
+          <div class="composer-bottom">
+            <span class="composer-hint">✳ Responses are checked for consistency and evidence.</span>
+            <button id="sendBtn" class="send-button" type="submit">↑</button>
+          </div>
+        </form>
+        <p class="disclaimer">Cognify-AI can make mistakes. Review important information and its evidence.</p>
+      </div>
+    </section>
 
+    <section class="view secondary-view" id="knowledgeView">
+      <div class="page-content">
+        <div class="eyebrow">YOUR CONTEXT, CONNECTED</div>
+        <h1>Knowledge <span>base.</span></h1>
+        <p class="welcome-copy">Information Cognify can retrieve to ground its answers.</p>
+
+        <div class="stats-grid">
+          <article class="stat-card"><span>DOCUMENTS</span><strong id="kbDocs">—</strong><small>Indexed sources</small></article>
+          <article class="stat-card"><span>TEXT CHUNKS</span><strong id="kbChunks">—</strong><small>Searchable passages</small></article>
+          <article class="stat-card"><span>EMBEDDINGS</span><strong id="kbEmbedding">—</strong><small>Retrieval backend</small></article>
+        </div>
+
+        <article class="content-card">
+          <h2>Knowledge engine</h2>
+          <div id="kbDetails" class="detail-list">Loading backend details...</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="view secondary-view" id="historyView">
+      <div class="page-content">
+        <div class="eyebrow">YOUR REVIEW TRAIL</div>
+        <h1>Verification <span>history.</span></h1>
+        <p class="welcome-copy">Review answers checked during this browser session.</p>
+        <div id="historyList" class="history-list">No verifications yet.</div>
+      </div>
+    </section>
+
+    <section class="view secondary-view" id="settingsView">
+      <div class="page-content">
+        <div class="eyebrow">SYSTEM CONFIGURATION</div>
+        <h1>Workspace <span>settings.</span></h1>
+        <p class="welcome-copy">A quick view of your local Cognify-AI setup.</p>
+        <article class="content-card">
+          <h2>Runtime status</h2>
+          <button id="settingsRefresh" class="secondary-button">Refresh status ↻</button>
+          <div id="settingsDetails" class="detail-list">Checking connection...</div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <aside class="report-panel" id="reportPanel">
+    <div class="report-header">
+      <div><div class="panel-eyebrow">COGNIFY INSIGHTS</div><h2>Verification report</h2></div>
+      <button id="closeReport" class="icon-button">×</button>
     </div>
-  </section>
+    <div class="report-body" id="reportBody">
+      <div class="report-empty">
+        <div class="report-empty-icon">◈</div>
+        <strong>Nothing to verify yet</strong>
+        <p>Ask a question to see verification results and evidence here.</p>
+      </div>
+    </div>
+    <div class="report-footer">◇ Powered by your local verification pipeline</div>
+  </aside>
+</div>
 
-  <footer class="foot">
-    <p>
-      Cognify-AI reduces hallucination risk by verifying generated claims against a local
-      knowledge base and rewriting unsupported answers. It does not eliminate hallucinations:
-      the retriever, the entailment model and the local LLM can all be wrong, and a claim that is
-      missing from the knowledge base is reported as unverified, not as false.
-    </p>
-    <p class="api-hint">Runs fully offline — Ollama + Sentence-Transformers + FAISS + FastAPI. No API keys. API docs at <code>/docs</code>.</p>
-  </footer>
-</main>
-
-<script src="script.js"></script>
+<div class="toast" id="toast"></div>
+<script src="/frontend/script.js" defer></script>
 </body>
 </html>
