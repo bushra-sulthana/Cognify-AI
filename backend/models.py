@@ -13,8 +13,15 @@ from pydantic import BaseModel, Field, field_validator
 # --------------------------------------------------------------------------- #
 # Requests
 # --------------------------------------------------------------------------- #
+class AttachmentIn(BaseModel):
+    name: str = Field(..., max_length=200)
+    data: str = Field(..., description="File content, base64 encoded")
+
+
 class ChatRequest(BaseModel):
     query: str = Field(..., description="The user question")
+    level: int = Field(2, ge=1, le=3, description="1 = School, 2 = College, 3 = Postgraduate")
+    attachments: List[AttachmentIn] = Field(default_factory=list, max_length=5)
     max_iterations: Optional[int] = Field(
         None, ge=0, le=5, description="Override the maximum number of self-corrections"
     )
@@ -88,6 +95,14 @@ class RiskBreakdown(BaseModel):
     weighted_contribution: dict
 
 
+class HighlightSegment(BaseModel):
+    text: str
+    risk: Optional[int] = None        # 30 / 60 / 80+ ; None = not a checkable claim
+    level: str = "NONE"               # NONE | LOW | MEDIUM | HIGH
+    status: str = ""                  # SUPPORTED | CONTRADICTED | INSUFFICIENT
+    claim: str = ""
+
+
 class IterationRecord(BaseModel):
     iteration: int
     answer: str
@@ -101,6 +116,8 @@ class IterationRecord(BaseModel):
 
 class ChatResponse(BaseModel):
     query: str
+    level: int = 2
+    level_name: str = "College"
     original_answer: str
     final_answer: str
     risk_score: int
@@ -113,6 +130,7 @@ class ChatResponse(BaseModel):
     evidence: List[ClaimResult]
     risk_breakdown: RiskBreakdown
     history: List[IterationRecord]
+    highlights: List[HighlightSegment] = []
     warnings: List[str] = []
     elapsed_seconds: float = 0.0
 
@@ -127,6 +145,7 @@ class VerifyResponse(BaseModel):
     claims: List[str]
     evidence: List[ClaimResult]
     risk_breakdown: RiskBreakdown
+    highlights: List[HighlightSegment] = []
     warnings: List[str] = []
 
 

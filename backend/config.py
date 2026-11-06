@@ -52,10 +52,23 @@ def _get_bool(key: str, default: bool) -> bool:
 # 1. Ollama (local LLM backend)
 # ---------------------------------------------------------------------------
 OLLAMA_HOST: str = _get_str("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL: str = _get_str("OLLAMA_MODEL", "llama3.2:3b")
-OLLAMA_TIMEOUT: int = _get_int("OLLAMA_TIMEOUT", 180)          # seconds
+OLLAMA_MODEL: str = _get_str("OLLAMA_MODEL", "llama3.2:1b")
+OLLAMA_TIMEOUT: int = _get_int("OLLAMA_TIMEOUT", 120)          # seconds
 OLLAMA_TEMPERATURE: float = _get_float("OLLAMA_TEMPERATURE", 0.2)
-OLLAMA_NUM_PREDICT: int = _get_int("OLLAMA_NUM_PREDICT", 400)  # max new tokens
+OLLAMA_NUM_PREDICT: int = _get_int("OLLAMA_NUM_PREDICT", 250)  # max new tokens
+OLLAMA_KEEP_ALIVE: str = _get_str("OLLAMA_KEEP_ALIVE", "30m")   # keep model loaded = no reload delay
+OLLAMA_NUM_CTX: int = _get_int("OLLAMA_NUM_CTX", 2048)           # smaller context = faster
+
+OLLAMA_VISION_MODEL: str = _get_str("OLLAMA_VISION_MODEL", "")   # e.g. llava; empty = photos not read
+
+# ---------------------------------------------------------------------------
+# 1b. Accounts and attachments
+# ---------------------------------------------------------------------------
+AUTH_REQUIRED: bool = _get_bool("AUTH_REQUIRED", True)
+SESSION_SECRET: str = _get_str("SESSION_SECRET", "")            # set a long random value in .env
+MAX_ATTACHMENTS: int = _get_int("MAX_ATTACHMENTS", 5)
+MAX_ATTACHMENT_MB: int = _get_int("MAX_ATTACHMENT_MB", 8)
+ATTACHMENT_PROMPT_CHARS: int = _get_int("ATTACHMENT_PROMPT_CHARS", 6000)
 
 # ---------------------------------------------------------------------------
 # 2. Paths

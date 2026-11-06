@@ -10,7 +10,7 @@ pip install -r requirements.txt
 if not exist .env copy .env.example .env
 echo.
 echo Setup finished. Next steps:
-echo   1. ollama pull llama3.2:3b
+echo   1. ollama pull llama3.2:1b
 echo   2. run_backend.bat
 echo   3. open http://localhost:8000
 pause

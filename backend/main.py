@@ -18,12 +18,17 @@ Then open http://localhost:8000
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+import secrets
+
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from backend import config
+from backend.attachments import AttachmentError
+from backend.auth import init_auth_db, require_user, router as auth_router
 from backend.corrector import correct_answer
 from backend.detector import detect
 from backend.logger import get_logger
@@ -37,6 +42,7 @@ from backend.models import (
     VerifyResponse,
 )
 from backend.ollama_client import OllamaClient, OllamaError
+from backend.highlighter import build_highlights
 from backend.pipeline import run_pipeline
 from backend.rag import knowledge_base
 from backend.verifier import nli_model
@@ -55,6 +61,10 @@ async def lifespan(app: FastAPI):
         knowledge_base.build()
     except Exception as exc:  # noqa: BLE001 - the API must start even if the KB fails
         log.error("Knowledge base could not be built: %s", exc)
+    try:
+        init_auth_db()
+    except Exception as exc:  # noqa: BLE001
+        log.error("User database could not be created: %s", exc)
     status = client.health()
     log.info("Ollama status: %s", status["message"])
     yield
@@ -70,6 +80,20 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Login sessions: a signed cookie. Set SESSION_SECRET in .env so that logins
+# survive a server restart; without it a random key is created at every start.
+if not config.SESSION_SECRET:
+    log.warning("SESSION_SECRET is not set - using a temporary key (everyone is logged out on restart).")
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=config.SESSION_SECRET or secrets.token_hex(32),
+    session_cookie="cognify_session",
+    same_site="lax",
+    https_only=False,          # local http://127.0.0.1; set True behind HTTPS
+    max_age=7 * 24 * 3600,
+)
+app.include_router(auth_router)
 
 # The frontend can also be opened as a file:// page during development
 app.add_middleware(
@@ -123,7 +147,7 @@ def reload_knowledge_base() -> dict:
 # Main pipeline
 # --------------------------------------------------------------------------- #
 @app.post("/api/chat", response_model=ChatResponse, tags=["pipeline"])
-def chat(request: ChatRequest) -> ChatResponse:
+def chat(request: ChatRequest, user: dict = Depends(require_user)) -> ChatResponse:
     """Generate an answer, verify it, and self-correct it when the risk is high."""
     try:
         result = run_pipeline(
@@ -131,7 +155,11 @@ def chat(request: ChatRequest) -> ChatResponse:
             kb=knowledge_base,
             client=client,
             max_iterations=request.max_iterations,
+            level=request.level,
+            attachments=[a.model_dump() for a in request.attachments],
         )
+    except AttachmentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OllamaError as exc:
         # 503: the local LLM service is unavailable - the message explains the fix
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -142,7 +170,7 @@ def chat(request: ChatRequest) -> ChatResponse:
 
 
 @app.post("/api/verify", response_model=VerifyResponse, tags=["pipeline"])
-def verify(request: VerifyRequest) -> VerifyResponse:
+def verify(request: VerifyRequest, user: dict = Depends(require_user)) -> VerifyResponse:
     """Verify an existing answer against the knowledge base (no generation)."""
     try:
         report = detect(request.answer, knowledge_base, client, query=request.query)
@@ -160,12 +188,13 @@ def verify(request: VerifyRequest) -> VerifyResponse:
         claims=report["claims"],
         evidence=report["results"],
         risk_breakdown=report["breakdown"],
+        highlights=build_highlights(request.answer, report["results"]),
         warnings=report["warnings"],
     )
 
 
 @app.post("/api/correct", response_model=CorrectResponse, tags=["pipeline"])
-def correct(request: CorrectRequest) -> CorrectResponse:
+def correct(request: CorrectRequest, user: dict = Depends(require_user)) -> CorrectResponse:
     """Run one evidence-grounded correction round on a given answer."""
     try:
         before = detect(request.answer, knowledge_base, client, query=request.query)

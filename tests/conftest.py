@@ -15,7 +15,11 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from backend import config  # noqa: E402
 from backend.rag import Chunk, KnowledgeBase  # noqa: E402
+
+# Existing API tests run without logging in (tests/test_auth.py switches it back on)
+config.AUTH_REQUIRED = False
 from backend.verifier import nli_model  # noqa: E402
 
 # Pretend the NLI model was already checked and is unavailable -> lexical verifier

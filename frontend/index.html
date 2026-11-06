@@ -10,6 +10,24 @@
   <link rel="stylesheet" href="/frontend/style.css">
 </head>
 <body>
+<div class="auth-screen" id="authScreen" hidden>
+  <form class="auth-card" id="authForm" novalidate>
+    <div class="auth-brand"><span class="brand-mark">✳</span> cognify<span>-AI</span></div>
+    <p class="auth-sub" id="authSub">Log in to continue.</p>
+    <div class="auth-tabs" role="tablist">
+      <button type="button" class="auth-tab active" data-auth="login" role="tab">Log in</button>
+      <button type="button" class="auth-tab" data-auth="signup" role="tab">Sign up</button>
+    </div>
+    <label for="authEmail">Email</label>
+    <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
+    <label for="authPassword">Password</label>
+    <input id="authPassword" type="password" autocomplete="current-password" placeholder="Your password" required>
+    <small class="auth-hint" id="authHint" hidden>Use at least 10 characters.</small>
+    <div class="auth-error" id="authError" role="alert"></div>
+    <button class="auth-submit" id="authSubmit" type="submit">Log in</button>
+  </form>
+</div>
+
 <div class="app-shell">
 
   <aside class="sidebar" id="sidebar">
@@ -42,16 +60,24 @@
     </div>
 
     <button class="profile-row" data-view="settings">
-      <span class="avatar">C</span>
-      <span><strong>Cognify workspace</strong><small>Local environment</small></span>
+      <span class="avatar" id="avatarLetter">C</span>
+      <span><strong id="profileName">Cognify workspace</strong><small id="profileSub">Local environment</small></span>
     </button>
+    <button class="logout-btn" id="logoutBtn" hidden>Log out</button>
   </aside>
 
   <main class="main-area">
     <header class="topbar">
       <button id="mobileMenu" class="icon-button mobile-only">☰</button>
       <div class="breadcrumbs">Cognify-AI <span>/</span> <strong id="pageTitle">Chat</strong></div>
-      <button id="toggleReport" class="report-toggle">◫ Verification report</button>
+      <div class="topbar-actions">
+        <label class="risk-switch" title="Colour each statement by hallucination risk">
+          <input type="checkbox" id="riskToggle" role="switch" aria-checked="false">
+          <span class="risk-switch-track"><span class="risk-switch-thumb"></span></span>
+          <span class="risk-switch-text">Risk highlight</span>
+        </label>
+        <button id="toggleReport" class="report-toggle">◫ Verification report</button>
+      </div>
     </header>
 
     <section class="view chat-view active" id="chatView">
@@ -101,11 +127,23 @@
 
       <div class="composer-wrap">
         <form id="chatForm" class="composer">
+          <div class="level-row" role="radiogroup" aria-label="Student level">
+            <span class="level-label">STUDENT LEVEL</span>
+            <button type="button" class="level-btn" data-level="1" role="radio" title="Simple words, short answers">Level 1 · School</button>
+            <button type="button" class="level-btn" data-level="2" role="radio" title="Key concepts with technical terms">Level 2 · College</button>
+            <button type="button" class="level-btn" data-level="3" role="radio" title="Precise, in-depth, with nuances">Level 3 · Postgraduate</button>
+          </div>
+          <div class="attach-chips" id="attachChips" hidden></div>
           <textarea id="messageInput" rows="1" placeholder="Ask Cognify anything..."></textarea>
           <div class="composer-bottom">
-            <span class="composer-hint">✳ Responses are checked for consistency and evidence.</span>
+            <div class="composer-left">
+              <button type="button" id="attachBtn" class="attach-button" title="Add photos or files" aria-label="Add photos or files">＋</button>
+              <span class="composer-hint">✳ Responses are checked for consistency and evidence.</span>
+            </div>
             <button id="sendBtn" class="send-button" type="submit">↑</button>
           </div>
+          <input type="file" id="fileInput" multiple hidden
+                 accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.txt,.md,.csv,.json">
         </form>
         <p class="disclaimer">Cognify-AI can make mistakes. Review important information and its evidence.</p>
       </div>

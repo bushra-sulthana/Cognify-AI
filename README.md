@@ -34,7 +34,7 @@ Language models cannot tell the difference between a fact they learned and a pla
 
 ## 5. Features
 
-- Local LLM generation via Ollama (default `llama3.2:3b`, runs on 16 GB RAM).
+- Local LLM generation via Ollama (default `llama3.2:1b`, fast even on CPU-only laptops).
 - Claim extraction with JSON output and a rule-based fallback for broken JSON.
 - Local RAG: `.txt`, `.md`, `.pdf` → chunks → MiniLM embeddings → FAISS.
 - NLI verification with `cross-encoder/nli-deberta-v3-base` and a lexical fallback.
@@ -98,7 +98,7 @@ Language models cannot tell the difference between a fact they learned and a pla
 
 | Layer | Technology | Why |
 |---|---|---|
-| LLM | Ollama + `llama3.2:3b` | Runs locally, no key, ~2 GB model |
+| LLM | Ollama + `llama3.2:1b` | Runs locally, no key, ~1.3 GB model, fastest answers |
 | Embeddings | `sentence-transformers/all-MiniLM-L6-v2` | 384-dim, CPU-friendly |
 | Vector store | FAISS (`IndexFlatIP`) | Fast exact cosine search; NumPy fallback |
 | Verification | `cross-encoder/nli-deberta-v3-base` | Entailment / contradiction / neutral |
@@ -120,7 +120,7 @@ Language models cannot tell the difference between a fact they learned and a pla
 :: put the project in C:\Cognify-AI, then:
 cd C:\Cognify-AI
 setup_windows.bat
-ollama pull llama3.2:3b
+ollama pull llama3.2:1b
 run_backend.bat
 :: open http://localhost:8000
 ```
@@ -147,9 +147,9 @@ ollama serve
 ## 12. Model download
 
 ```bat
-ollama pull llama3.2:3b
+ollama pull llama3.2:1b
 ollama list
-ollama run llama3.2:3b "Say hello in one sentence"
+ollama run llama3.2:1b "Say hello in one sentence"
 ```
 
 Lighter alternative for a slow or 8 GB machine:
@@ -158,7 +158,7 @@ Lighter alternative for a slow or 8 GB machine:
 ollama pull llama3.2:1b
 ```
 
-Then set `OLLAMA_MODEL=llama3.2:1b` in `.env`.
+Then set `OLLAMA_MODEL=llama3.2:1b` in `.env`. For better quality (slower) use `llama3.2:3b`.
 
 ## 13. Python environment setup
 
@@ -436,7 +436,7 @@ They pass without Ollama and without downloading any model.
 | Problem | Fix |
 |---|---|
 | `Cannot reach Ollama at http://localhost:11434` | Start Ollama: `ollama serve`, or launch the Ollama app |
-| `Model 'llama3.2:3b' was not found` | `ollama pull llama3.2:3b`, then check with `ollama list` |
+| `Model 'llama3.2:1b' was not found` | `ollama pull llama3.2:1b`, then check with `ollama list` |
 | Backend unreachable in the browser | Start it: `python -m uvicorn backend.main:app --port 8000`, then open http://localhost:8000 |
 | `'python' is not recognized` | Install Python from python.org and tick "Add Python to PATH" |
 | `'uvicorn' is not recognized` | Activate the venv (`venv\Scripts\activate`) and use `python -m uvicorn ...` |

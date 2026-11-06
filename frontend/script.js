@@ -6,8 +6,136 @@
     chats: [],
     activeChatId: null,
     history: [],
-    busy: false
+    busy: false,
+    highlight: false,         // risk highlighting is OFF by default
+    level: Number(localStorage.getItem("cognify.level")) || 2,   // 1 School, 2 College, 3 Postgraduate
+    pending: [],              // files added with the + button, not sent yet
+    user: null
   };
+
+  const LEVEL_NAME = {1: "School", 2: "College", 3: "Postgraduate"};
+  const MAX_FILES = 5, MAX_MB = 8;
+  const ALLOWED = /\.(png|jpe?g|webp|gif|pdf|txt|md|csv|json)$/i;
+  const IS_IMAGE = /\.(png|jpe?g|webp|gif)$/i;
+
+  function toast(text) {
+    const el = $("toast");
+    el.textContent = text;
+    el.classList.add("show");
+    setTimeout(() => el.classList.remove("show"), 3200);
+  }
+
+  // ---------------- login ----------------
+  let authMode = "login";
+
+  function setAuthMode(mode) {
+    authMode = mode;
+    document.querySelectorAll(".auth-tab").forEach(b => b.classList.toggle("active", b.dataset.auth === mode));
+    $("authSubmit").textContent = mode === "login" ? "Log in" : "Create account";
+    $("authSub").textContent = mode === "login" ? "Log in to continue." : "Create your account to get started.";
+    $("authHint").hidden = mode !== "signup";
+    $("authPassword").autocomplete = mode === "login" ? "current-password" : "new-password";
+    $("authError").textContent = "";
+  }
+
+  function showAuth() {
+    state.user = null;
+    $("authScreen").hidden = false;
+    $("logoutBtn").hidden = true;
+    $("authEmail").focus();
+  }
+
+  function setUser(email) {
+    state.user = email;
+    $("authScreen").hidden = true;
+    $("profileName").textContent = email;
+    $("profileSub").textContent = "Signed in";
+    $("avatarLetter").textContent = (email || "C")[0].toUpperCase();
+    $("logoutBtn").hidden = false;
+  }
+
+  async function authCall(path, body) {
+    const r = await fetch("/api/auth/" + path, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const d = data.detail;
+      throw new Error(Array.isArray(d) ? "Please check your email and password (10+ characters to sign up)." : (d || "Request failed."));
+    }
+    return data;
+  }
+
+  async function submitAuth(e) {
+    e.preventDefault();
+    const email = $("authEmail").value.trim(), password = $("authPassword").value;
+    $("authError").textContent = "";
+    if (!email || !password) { $("authError").textContent = "Enter your email and password."; return; }
+    $("authSubmit").disabled = true;
+    try {
+      if (authMode === "signup") await authCall("signup", {email, password});
+      const data = await authCall("login", {email, password});
+      $("authPassword").value = "";
+      setUser(data.email);
+    } catch (err) {
+      $("authError").textContent = err.message;
+    } finally {
+      $("authSubmit").disabled = false;
+    }
+  }
+
+  async function checkSession() {
+    try {
+      const r = await fetch("/api/auth/me");
+      if (r.ok) { setUser((await r.json()).email); return; }
+    } catch { /* server unreachable: fall through to the login screen */ }
+    showAuth();
+  }
+
+  // ---------------- attachments (+ button) ----------------
+  function readAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+      reader.onerror = () => reject(new Error("Could not read " + file.name));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function addFiles(fileList) {
+    for (const file of fileList) {
+      if (state.pending.length >= MAX_FILES) { toast(`You can attach up to ${MAX_FILES} files.`); break; }
+      if (!ALLOWED.test(file.name)) { toast(`"${file.name}" is not supported. Use photos, PDF, TXT, MD, CSV or JSON.`); continue; }
+      if (file.size > MAX_MB * 1024 * 1024) { toast(`"${file.name}" is larger than ${MAX_MB} MB.`); continue; }
+      state.pending.push({file, name: file.name, image: IS_IMAGE.test(file.name),
+                          thumb: IS_IMAGE.test(file.name) ? URL.createObjectURL(file) : ""});
+    }
+    renderChips();
+  }
+
+  function renderChips() {
+    const host = $("attachChips");
+    host.hidden = !state.pending.length;
+    host.innerHTML = state.pending.map((a, i) => `
+      <span class="chip">
+        ${a.thumb ? `<img src="${a.thumb}" alt="">` : `<i>📄</i>`}
+        <span class="chip-name">${esc(a.name)}</span>
+        <button type="button" data-remove="${i}" aria-label="Remove ${esc(a.name)}">×</button>
+      </span>`).join("");
+  }
+
+  function setLevel(n) {
+    state.level = n;
+    localStorage.setItem("cognify.level", String(n));
+    document.querySelectorAll(".level-btn").forEach(b => {
+      const on = Number(b.dataset.level) === n;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-checked", String(on));
+    });
+  }
+
 
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -53,6 +181,39 @@
       : `<div class="empty-state">${filter ? "No matching conversations." : "Your conversations will appear here."}</div>`;
   }
 
+  const RISK_LABEL = {
+    LOW: "Low risk (green)",
+    MEDIUM: "Medium risk (yellow)",
+    HIGH: "High risk (red)"
+  };
+  const RISK_REASON = {
+    SUPPORTED: "supported by evidence",
+    INSUFFICIENT: "not enough evidence to confirm",
+    CONTRADICTED: "evidence contradicts this"
+  };
+
+  // Answer text: plain when highlighting is OFF, coloured by risk when ON.
+  function answerHtml(m) {
+    const segments = Array.isArray(m.segments) ? m.segments : null;
+    if (!state.highlight || !segments || !segments.length) return esc(m.content);
+
+    return segments.map(s => {
+      const level = String(s.level || "NONE").toUpperCase();
+      if (!RISK_LABEL[level] || s.risk == null) return esc(s.text);
+      const tip = `${RISK_LABEL[level]} - risk ${s.risk}% - ${RISK_REASON[s.status] || "unverified"}`;
+      return `<mark class="risk-${level.toLowerCase()}" title="${esc(tip)}">${esc(s.text)}</mark>`;
+    }).join("");
+  }
+
+  function riskLegend(m) {
+    if (!state.highlight || !Array.isArray(m.segments) || !m.segments.length) return "";
+    return `<div class="risk-legend">
+      <span><i class="dot low"></i>30% Low</span>
+      <span><i class="dot medium"></i>60% Medium</span>
+      <span><i class="dot high"></i>80% High</span>
+    </div>`;
+  }
+
   function renderMessages() {
     const chat = activeChat();
 
@@ -65,13 +226,19 @@
       }
 
       const user = m.role === "user";
+      const files = user && Array.isArray(m.attachments) && m.attachments.length
+        ? `<div class="msg-files">${m.attachments.map(a => `<span class="chip static">${a.thumb ? `<img src="${a.thumb}" alt="">` : "<i>📄</i>"}<span class="chip-name">${esc(a.name)}</span></span>`).join("")}</div>` : "";
+      const levelTag = user && m.level ? `<span class="level-tag">Level ${m.level} · ${LEVEL_NAME[m.level]}</span>` : "";
 
       return `
         <article class="message ${user ? "user" : "assistant"}">
           <div class="message-avatar">${user ? "Y" : "✳"}</div>
           <div class="message-content">
-            <div class="message-label">${user ? "YOU" : "COGNIFY-AI"}</div>
-            <div class="message-bubble">${esc(m.content)}</div>
+            <div class="message-label">${user ? "YOU" : "COGNIFY-AI"} ${levelTag}</div>
+            ${files}
+            <div class="message-bubble">${user ? esc(m.content) : answerHtml(m)}</div>
+            ${user ? "" : riskLegend(m)}
+            ${!user && m.notes && m.notes.length ? `<div class="msg-notes">${m.notes.map(n => `<div>ⓘ ${esc(n)}</div>`).join("")}</div>` : ""}
             ${!user ? `<div class="message-tools"><button data-copy="${i}">Copy answer</button><button data-again="${i}">Ask again</button></div>` : ""}
           </div>
         </article>
@@ -127,6 +294,12 @@
     return typeof value === "string" && value ? [value] : [];
   }
 
+  function verdictResults(data) {
+    const ev = data && data.evidence;
+    return Array.isArray(ev) && ev.length && typeof ev[0] === "object" && ev[0] && "status" in ev[0] && "claim" in ev[0]
+      ? ev : null;
+  }
+
   function reportFrom(data) {
     const nested = get(data, ["verification", "verification_report", "report", "analysis", "metadata"]) || {};
 
@@ -143,6 +316,7 @@
 
     return {
       answer,
+      highlights: Array.isArray(data && data.highlights) ? data.highlights : [],
       original: get(data, ["original_answer", "initial_answer", "draft_answer"]) ??
                 get(nested, ["original_answer", "initial_answer"]),
       risk: get(data, ["risk_score", "risk", "hallucination_risk"]) ??
@@ -151,9 +325,21 @@
                   get(nested, ["confidence", "confidence_score"]),
       iterations: get(data, ["iterations", "correction_iterations", "rounds"]) ??
                   get(nested, ["iterations", "rounds"]),
-      claims: arrayify(get(data, ["claims", "claim_analysis", "claim_results"]) ??
-                       get(nested, ["claims", "claim_analysis"])),
-      evidence: arrayify(get(data, ["evidence", "retrieved_evidence", "sources", "context"]) ??
+      // This backend returns `claims` as plain strings and the verdicts in `evidence`
+      // (one result per claim). Use the verdict objects so claims are classified.
+      claims: verdictResults(data) ? verdictResults(data).map(r => ({
+                claim: r.claim,
+                status: r.status,
+                reason: r.best_evidence
+                  ? "Evidence: " + r.best_evidence.slice(0, 140) + (r.best_evidence.length > 140 ? "…" : "")
+                  : "No supporting evidence found."
+              }))
+              : arrayify(get(data, ["claims", "claim_analysis", "claim_results"]) ??
+                         get(nested, ["claims", "claim_analysis"])),
+      evidence: verdictResults(data) ? verdictResults(data)
+                  .flatMap(r => (r.evidence || []).map(e => ({title: e.source, text: e.text})))
+                  .filter((e, i, all) => all.findIndex(x => x.text === e.text) === i)
+              : arrayify(get(data, ["evidence", "retrieved_evidence", "sources", "context"]) ??
                          get(nested, ["evidence", "sources"])),
       history: get(data, ["correction_history", "corrections", "history"]) ??
                get(nested, ["correction_history", "corrections"]),
@@ -263,8 +449,10 @@
   }
 
   async function sendMessage(text) {
-    const question = String(text || "").trim();
+    let question = String(text || "").trim();
+    if (!question && state.pending.length) question = "Please explain the attached file(s).";
     if (!question || state.busy) return;
+  
 
     if (!activeChat()) newChat();
 
@@ -274,8 +462,13 @@
       chat.title = question.length > 38 ? question.slice(0, 38) + "…" : question;
     }
 
+    const sending = state.pending.slice();
+    state.pending = [];
+    renderChips();
+
     chat.messages.push(
-      {role: "user", content: question},
+      {role: "user", content: question, level: state.level,
+       attachments: sending.map(a => ({name: a.name, thumb: a.thumb}))},
       {role: "loading", content: ""}
     );
 
@@ -287,11 +480,20 @@
     renderMessages();
 
     try {
+      const attachments = await Promise.all(
+        sending.map(async a => ({name: a.name, data: await readAsBase64(a.file)}))
+      );
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({query: question})
+        body: JSON.stringify({query: question, level: state.level, attachments})
       });
+
+      if (response.status === 401) {          // session expired
+        showAuth();
+        throw new Error("Your session expired. Please log in again.");
+      }
 
       const textResponse = await response.text();
       let data;
@@ -314,7 +516,9 @@
       }
 
       chat.messages = chat.messages.filter(m => m.role !== "loading");
-      chat.messages.push({role: "assistant", content: report.answer});
+      chat.messages.push({role: "assistant", content: report.answer, segments: report.highlights,
+        notes: Array.isArray(data.warnings)
+          ? data.warnings.filter(w => /photo|attach|vision|PDF|readable text|knowledge base has no evidence|Correction was skipped/i.test(w)) : []});
       chat.report = report;
 
       renderReport(report);
@@ -468,6 +672,12 @@
   $("searchChats").addEventListener("input", e => renderRecent(e.target.value));
   $("refreshHealth").addEventListener("click", refreshHealth);
   $("settingsRefresh").addEventListener("click", refreshHealth);
+  $("riskToggle").addEventListener("change", e => {
+    state.highlight = e.target.checked;
+    e.target.setAttribute("aria-checked", String(state.highlight));
+    renderMessages();
+  });
+
   $("toggleReport").addEventListener("click", () => $("reportPanel").classList.toggle("open"));
   $("closeReport").addEventListener("click", () => $("reportPanel").classList.remove("open"));
   $("mobileMenu").addEventListener("click", () => $("sidebar").classList.toggle("mobile-open"));
@@ -483,6 +693,31 @@
     }
   });
 
+  document.querySelectorAll(".auth-tab").forEach(b => b.addEventListener("click", () => setAuthMode(b.dataset.auth)));
+  $("authForm").addEventListener("submit", submitAuth);
+  $("logoutBtn").addEventListener("click", async () => {
+    try { await fetch("/api/auth/logout", {method: "POST"}); } catch { /* ignore */ }
+    state.chats = []; state.history = []; state.activeChatId = null;
+    newChat(); renderReport(null);
+    $("profileName").textContent = "Cognify workspace";
+    $("profileSub").textContent = "Local environment";
+    showAuth();
+  });
+
+  document.querySelectorAll(".level-btn").forEach(b => b.addEventListener("click", () => setLevel(Number(b.dataset.level))));
+  $("attachBtn").addEventListener("click", () => $("fileInput").click());
+  $("fileInput").addEventListener("change", e => { addFiles(e.target.files); e.target.value = ""; });
+  $("attachChips").addEventListener("click", e => {
+    const btn = e.target.closest("[data-remove]");
+    if (!btn) return;
+    const [removed] = state.pending.splice(Number(btn.dataset.remove), 1);
+    if (removed && removed.thumb) URL.revokeObjectURL(removed.thumb);
+    renderChips();
+  });
+
+  setAuthMode("login");
+  setLevel(state.level in LEVEL_NAME ? state.level : 2);
+  checkSession();
   newChat();
   refreshHealth();
 })();

@@ -16,9 +16,12 @@ import time
 from typing import Dict, List, Optional
 
 from backend import config
-from backend.corrector import correct_answer
+from backend.corrector import CorrectionRejected, correct_answer
 from backend.detector import detect
 from backend.generator import generate_answer
+from backend.attachments import EvidenceOverlay, build_context, describe_images, parse_attachments
+from backend.highlighter import build_highlights
+from backend.levels import level_name, normalise_level
 from backend.logger import get_logger, shorten
 from backend.ollama_client import OllamaClient, OllamaError
 from backend.rag import KnowledgeBase
@@ -46,6 +49,8 @@ def run_pipeline(
     kb: KnowledgeBase,
     client: OllamaClient,
     max_iterations: Optional[int] = None,
+    level: Optional[int] = None,
+    attachments: Optional[List[Dict]] = None,
 ) -> Dict:
     """Run generation + verification + self-correction for one user query."""
     started = time.time()
@@ -56,7 +61,16 @@ def run_pipeline(
     log.info("QUERY: %s", query)
 
     # ---- 1. initial generation --------------------------------------- #
-    original_answer = generate_answer(client, query)
+    level = normalise_level(level)
+    parsed = parse_attachments(attachments or [])
+    warnings.extend(parsed.notes)
+    descriptions = describe_images(client, parsed.images, warnings)
+    context = build_context(parsed.documents, descriptions, query)
+    if parsed.documents:
+        # the user's own documents count as evidence, next to the knowledge base
+        kb = EvidenceOverlay(kb, parsed.documents)
+
+    original_answer = generate_answer(client, query, level=level, context=context)
     answer = original_answer
     history: List[Dict] = []
     iterations = 0
@@ -71,8 +85,22 @@ def run_pipeline(
             "Risk %d > threshold %d -> correction round %d/%d",
             report["risk_score"], config.RISK_THRESHOLD, iterations, max_iterations,
         )
+        # Nothing contradicts the answer and the knowledge base simply has no evidence
+        # about it: a rewrite could only invent text, so keep the answer and flag it.
+        if not any(r["status"] == "CONTRADICTED" for r in report["results"]) and \
+                not any(r["status"] == "SUPPORTED" for r in report["results"]):
+            iterations -= 1
+            warnings.append(
+                "The knowledge base has no evidence about this topic, so the answer was "
+                "left as the model wrote it and is marked as unverified."
+            )
+            break
         try:
-            candidate = correct_answer(client, query, answer, report["results"])
+            candidate = correct_answer(client, query, answer, report["results"], level=level)
+        except CorrectionRejected as exc:
+            warnings.append(f"Correction was skipped because {exc}; the previous answer was kept.")
+            iterations -= 1
+            break
         except OllamaError as exc:
             warnings.append(f"Correction round {iterations} failed: {exc}")
             iterations -= 1
@@ -107,6 +135,8 @@ def run_pipeline(
 
     return {
         "query": query,
+        "level": level,
+        "level_name": level_name(level),
         "original_answer": original_answer,
         "final_answer": answer,
         "risk_score": report["risk_score"],
@@ -119,6 +149,7 @@ def run_pipeline(
         "evidence": report["results"],
         "risk_breakdown": report["breakdown"],
         "history": history,
+        "highlights": build_highlights(answer, report["results"]),
         "warnings": warnings,
         "elapsed_seconds": elapsed,
     }

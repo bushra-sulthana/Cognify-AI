@@ -12,8 +12,10 @@ The LLM is explicitly told to say "could not be verified" instead of inventing
 new facts, which is what turns a hallucination into an honest answer.
 """
 
+import re
 from typing import Dict, List
 
+from backend.levels import level_instruction, level_length
 from backend.logger import get_logger, shorten
 from backend.ollama_client import OllamaClient
 from backend.verifier import CONTRADICTED, SUPPORTED
@@ -41,9 +43,10 @@ Do not invent facts, numbers, names or dates.
 If a contradicted claim is corrected by the evidence, state the correct fact.
 If the evidence is insufficient for part of the question, explicitly write that
 this information could not be verified against the knowledge base.
-Keep it short (2-5 sentences).
+{style}
 
-Return only the corrected answer, with no preamble and no explanation."""
+Write the corrected answer between <answer> and </answer> tags.
+Write nothing outside the tags: no preamble, no reasoning, no explanation."""
 
 
 def _format_problem_claims(results: List[Dict]) -> str:
@@ -71,8 +74,13 @@ def _format_evidence(results: List[Dict], limit: int = 6) -> str:
     return "\n".join(lines) if lines else "- (no relevant evidence was found in the knowledge base)"
 
 
-def build_correction_prompt(query: str, answer: str, results: List[Dict]) -> str:
+def build_correction_prompt(query: str, answer: str, results: List[Dict], level: int = None) -> str:
+    style = (
+        f"{level_instruction(level)} Keep the same style and length ({level_length(level)})."
+        if level is not None else "Keep it short (2-5 sentences)."
+    )
     return CORRECTION_TEMPLATE.format(
+        style=style,
         query=query or "(not provided)",
         answer=answer,
         problem_claims=_format_problem_claims(results),
@@ -80,13 +88,51 @@ def build_correction_prompt(query: str, answer: str, results: List[Dict]) -> str
     )
 
 
-def correct_answer(client: OllamaClient, query: str, answer: str, results: List[Dict]) -> str:
+class CorrectionRejected(Exception):
+    """The model did not return a usable rewrite (the previous answer is kept)."""
+
+
+_REASONING_START = re.compile(
+    r"^\s*(we are given|we have|let'?s|let me|okay|ok,|hmm|first,|so,|wait|the user|"
+    r"i need|i should|i'll|the original answer|the problem|the task|looking at)",
+    re.I,
+)
+_REASONING_PHRASES = (
+    "the problem says", "rewrite the answer", "the user ", "the claims", "trusted evidence",
+    "the evidence provided", "evidence base", "original answer", "we are given", "let's check",
+)
+
+
+def looks_like_reasoning(text: str, original: str) -> bool:
+    """True when the 'answer' is the model thinking aloud instead of an answer."""
+    lowered = text.lower()
+    if _REASONING_START.match(text):
+        return True
+    if sum(phrase in lowered for phrase in _REASONING_PHRASES) >= 2:
+        return True
+    return len(text) > max(3 * len(original), 900)
+
+
+def extract_answer(raw: str) -> str:
+    """Take the text inside <answer>...</answer>; refuse anything else."""
+    found = re.findall(r"<answer>(.*?)</answer>", raw, flags=re.S | re.I)
+    if found:
+        return found[-1].strip()
+    match = re.search(r"<answer>(.*)$", raw, flags=re.S | re.I)   # closing tag missing
+    if match:
+        return match.group(1).strip()
+    raise CorrectionRejected("the model did not use the <answer> tags")
+
+
+def correct_answer(client: OllamaClient, query: str, answer: str, results: List[Dict], level: int = None) -> str:
     """Ask the local LLM for an evidence-grounded rewrite."""
-    prompt = build_correction_prompt(query, answer, results)
+    prompt = build_correction_prompt(query, answer, results, level)
     corrected = client.generate(prompt=prompt, system=CORRECTION_SYSTEM_PROMPT, temperature=0.0)
 
+    cleaned = extract_answer(corrected).strip().strip('"')
+    if not cleaned or looks_like_reasoning(cleaned, answer):
+        raise CorrectionRejected("the model returned its reasoning instead of an answer")
     # Small models sometimes wrap the rewrite in quotes or a label
-    cleaned = corrected.strip().strip('"')
     for prefix in ("Corrected answer:", "CORRECTED ANSWER:", "Answer:"):
         if cleaned.startswith(prefix):
             cleaned = cleaned[len(prefix):].strip()
