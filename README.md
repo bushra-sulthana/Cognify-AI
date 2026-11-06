@@ -2,8 +2,7 @@
 
 **Self-Correcting LLM Framework for Detecting and Reducing Hallucinations**
 
-Cognify-AI generates an answer with a local LLM, breaks that answer into individual factual claims, checks each claim against a trusted local knowledge base, computes a transparent **Hallucination Risk Score**, and automatically rewrites the answer from the retrieved evidence when the risk is too high — then verifies it again.
-
+Cognify-AI generates answers using a local Large Language Model (LLM), breaks the generated response into individual factual claims, and checks each claim against a trusted local knowledge base. It calculates a transparent **Hallucination Risk Score** to identify potentially incorrect or unsupported information. When the risk is high, the system automatically rewrites the answer using retrieved evidence and performs another verification process. It also uses Retrieval-Augmented Generation (RAG) to improve factual accuracy and reliability. By combining claim-level verification, risk assessment, and automatic correction, Cognify-AI aims to reduce AI hallucinations and provide users with more trustworthy, transparent, and evidence-based answers.
 Everything runs on your own machine: **Ollama** for generation, **Sentence-Transformers** for embeddings, **FAISS** for vector search, a local **NLI** model for entailment checking, **FastAPI** for the backend and plain **HTML/CSS/JS** for the frontend.
 **No OpenAI, no Gemini, no Claude, no API key, no cloud service.**
 
